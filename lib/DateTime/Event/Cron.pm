@@ -7,7 +7,7 @@ use Carp;
 
 use vars qw($VERSION);
 
-$VERSION = '0.05';
+$VERSION = '0.06';
 
 use constant DEBUG => 0;
 
@@ -87,7 +87,10 @@ sub new_from_crontab {
   while (<$fh>) {
     my $dtc;
     eval { $dtc = $class->new(%parms, cron => $_) };
-    push(@dtcrons, $dtc) if ref $dtc && !$@;
+    if (ref $dtc && !$@) {
+      push(@dtcrons, $dtc);
+      $parms{user_mode} = 1 if defined $dtc->user;
+    }
   }
   @dtcrons;
 }
@@ -362,13 +365,14 @@ sub _make_cronset { shift; DateTime::Event::Cron::IntegratedSet->new(@_) }
 
 sub days_contain { shift->_cronset->days_contain(@_) }
 
-sub minute  { shift->_cronset->minute  }
-sub hour    { shift->_cronset->hour    }
-sub day     { shift->_cronset->day     }
-sub month   { shift->_cronset->month   }
-sub dow     { shift->_cronset->dow     }
-sub user    { shift->_cronset->user    }
-sub command { shift->_cronset->command }
+sub minute   { shift->_cronset->minute  }
+sub hour     { shift->_cronset->hour    }
+sub day      { shift->_cronset->day     }
+sub month    { shift->_cronset->month   }
+sub dow      { shift->_cronset->dow     }
+sub user     { shift->_cronset->user    }
+sub command  { shift->_cronset->command }
+sub original { shift->_cronset->original }
 
 ### Static acessors/mutators
 
@@ -454,24 +458,34 @@ sub set_cron {
   my $cron = $parms{cron};
   my $user_mode = $parms{user_mode};
   defined $cron or croak "Cron entry fields required\n";
-  my @entry;
+  $self->_attr('original', $cron);
+  my @line;
   if (ref $cron) {
-    @entry = @$cron;
-  }
-  elsif ($user_mode) {
-    @entry = $cron =~ /^\s*(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s*(.*)/;
+    @line = grep(!/^\s*$/, @$cron);
   }
   else {
-    @entry = $cron =~ /^\s*(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s*(.*)/;
+    $cron =~ s/^\s+//;
+    $cron =~ s/\s+$//;
+    @line = split(/\s+/, $cron);
   }
-  @entry >= 5 or croak "At least five cron entry fields required.\n";
+  @line >= 5 or croak "At least five cron entry fields required.\n";
+  my @entry = splice(@line, 0, 5);
+  my($user, $command);
+  unless (defined $user_mode) {
+    # auto-detect
+    if (@line > 1 && $line[0] =~ /^\w+$/) {
+      $user_mode = 1;
+    }
+  }
+  $user = shift @line if $user_mode;
+  $command = join(' ', @line);
+  $self->_attr('command', $command);
+  $self->_attr('user', $user);
   my $i = 0;
   foreach my $name (qw( minute hour day month dow )) {
     $self->_attr($name, $self->make_valid_set($name, $entry[$i]));
     ++$i;
   }
-  $self->_attr('command', $entry[-1]) if $entry[-1];
-  $self->_attr('user', $entry[-2]) if $user_mode && $entry[-2];
   my @day_list  = $self->day->list;
   my @dow_list  = $self->dow->list;
   my $day_range = $self->range('day');
@@ -539,16 +553,17 @@ sub days_contain {
 }
 
 # Set Accessors
-sub minute  { shift->_attr('minute' ) }
-sub hour    { shift->_attr('hour'   ) }
-sub day     { shift->_attr('day'    ) }
-sub month   { shift->_attr('month'  ) }
-sub dow     { shift->_attr('dow'    ) }
-sub user    { shift->_attr('user'   ) }
-sub command { shift->_attr('command') }
+sub minute   { shift->_attr('minute' ) }
+sub hour     { shift->_attr('hour'   ) }
+sub day      { shift->_attr('day'    ) }
+sub month    { shift->_attr('month'  ) }
+sub dow      { shift->_attr('dow'    ) }
+sub user     { shift->_attr('user'   ) }
+sub command  { shift->_attr('command') }
+sub original { shift->_attr('original') }
 
 # Accessors/mutators
-sub _range       { shift->_attr('range',       @_) }
+sub _range       { shift->_attr('range', @_) }
 
 sub _attr {
   my $self = shift;
@@ -687,6 +702,20 @@ sets from crontab lines and files.
   # crontab file
   @dtc = DateTime::Event::Cron->new_from_crontab('/etc/crontab');
 
+  # Full cron lines with user, such as from /etc/crontab
+  # or files in /etc/cron.d, are supported:
+  $crontab = '* * * * * gump /bin/date';
+  $dtc = DateTime::Event::Cron->new($crontab);
+
+  # Auto-detection of users is disabled if you explicitly
+  # enable/disable via named parameters:
+  $dtc = DateTime::Event::Cron->new(cron => $crontab, user_mode => 1);
+  my $user = $dtc->user;
+  my $command = $dtc->command;
+
+  # Unparsed original cron entry
+  my $original = $dtc->original;
+
 =head1 DESCRIPTION
 
 DateTime::Event::Cron generated DateTime events or DateTime::Set
@@ -786,6 +815,17 @@ cases except this particular method)
 Returns the command string, if any, from the original crontab entry.
 Currently no expansion is performed such as resolving environment
 variables, etc.
+
+=item user()
+
+Returns the username under which this cron command was to be
+executed, assuming such a field was present in the original
+cron entry.
+
+=item original()
+
+Returns the original, unparsed cron string including any user
+or command fields.
 
 =back
 
