@@ -5,7 +5,9 @@ use strict;
 use warnings;
 use Carp;
 
-our $VERSION = '0.02';
+use vars qw($VERSION);
+
+$VERSION = '0.03';
 
 use constant DEBUG => 0;
 
@@ -13,7 +15,7 @@ use DateTime;
 use DateTime::Set;
 use Set::Crontab;
 
-our %Object_Attributes;
+my %Object_Attributes;
 
 ###
 
@@ -390,6 +392,8 @@ sub DESTROY { delete $Object_Attributes{shift()} }
 
 ##########
 
+{
+
 package DateTime::Event::Cron::IntegratedSet;
 
 # IntegratedSet manages the collection of field sets for
@@ -403,7 +407,7 @@ package DateTime::Event::Cron::IntegratedSet;
 use strict;
 use Carp;
 
-our %Range = (
+my %Range = (
   minute => [0..59],
   hour   => [0..23],
   day    => [1..31],
@@ -411,7 +415,9 @@ our %Range = (
   dow    => [1..7],
 );
 
-our %Object_Attributes;
+my @Month_Max = qw( 31 29 31 30 31 30 31 31 30 31 30 31 );
+
+my %Object_Attributes;
 
 sub new {
   my $self = [];
@@ -440,6 +446,16 @@ sub set_cron {
                      scalar @dow_list != scalar @$dow_range ? 1 : 0);
   $self->dow_squelch(scalar @dow_list == scalar @$dow_range &&
                      scalar @day_list != scalar @$day_range ? 1 : 0);
+  unless ($self->day_squelch) {
+    my @days = $self->day->list;
+    my $pass = 0;
+    MONTH: foreach my $month ($self->month->list) {
+      foreach (@days) {
+        ++$pass && last MONTH if $_ <= $Month_Max[$month - 1];
+      }
+    }
+    croak "Impossible last day for provided months.\n" unless $pass;
+  }
   $self;
 }
 
@@ -509,7 +525,11 @@ sub _attr {
 
 sub DESTROY { delete $Object_Attributes{shift()} }
 
+}
+
 ##########
+
+{
 
 package DateTime::Event::Cron::OrderedSet;
 
@@ -563,6 +583,8 @@ sub _attr {
 }
 
 sub DESTROY { delete $Object_Attributes{shift()} }
+
+}
 
 ###
 
@@ -723,6 +745,7 @@ modify it under the same terms as Perl itself.
 =head1 SEE ALSO
 
 DateTime(3), DateTime::Set(3), DateTime::Event::Recurrence(3),
-DateTime::Span(3), Set::Crontab(3), crontab(5)
+DateTime::Event::ICal(3), DateTime::Span(3), Set::Crontab(3),
+crontab(5)
 
 =cut

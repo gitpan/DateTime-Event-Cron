@@ -1,5 +1,10 @@
 Revision history:
 
+0.03  Wed May  7 17:09:38 EDT 2003
+	- more edge cases detected/prevented
+	- dependencies added
+	- removal of 'our'
+
 0.02  Fri May  2 00:22:52 EDT 2003
 	- changed API
         - fixed some boundary cases

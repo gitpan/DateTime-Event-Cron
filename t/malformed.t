@@ -1,14 +1,12 @@
 #!/usr/bin/perl -w
 use strict;
 use lib './lib';
-use Test::More;
+use Test::More tests => 20;
 
 use DateTime;
 use DateTime::Event::Cron;
 
 my($dtc);
-
-plan tests => 18;
 
 # handle overfull lines gracefully (possibly from an actual crontab)
 $dtc = DateTime::Event::Cron->new('* * * * * /bin/buzzard');
@@ -85,5 +83,13 @@ eval {
   $dtc = DateTime::Event::Cron->new('* * * * 11 /bin/bad');
 };
 ok($@ ne '', 'reject dow out of range');
+eval {
+  $dtc = DateTime::Event::Cron->new('* * 31 2,4,6,9,11 *');
+};
+ok($@ ne '', 'reject dom out of range for short months');
+eval {
+  $dtc = DateTime::Event::Cron->new('* * 30 2 *');
+};
+ok($@ ne '', 'reject dom out of range for feb');
 
 # End of tests
