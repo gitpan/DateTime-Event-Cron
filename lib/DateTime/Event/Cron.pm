@@ -7,7 +7,7 @@ use Carp;
 
 use vars qw($VERSION);
 
-$VERSION = '0.03';
+$VERSION = '0.05';
 
 use constant DEBUG => 0;
 
@@ -22,31 +22,46 @@ my %Object_Attributes;
 sub from_cron {
   # Return cron as DateTime::Set
   my $class = shift;
-  @_ % 2 == 1 or croak "Invalid arguments.\n";
-  my $dtc = $class->new(shift);
   my %sparms = @_;
-  Carp::cluck "Recurrence callbacks overriden by $class\n"
-    if $sparms{next} || $sparms{recurrence} || $sparms{previous};
-  delete $sparms{next};
-  delete $sparms{previous};
-  delete $sparms{recurrence};
-  $sparms{next} = sub { $dtc->next(@_) };
-  $sparms{previous} = sub { $dtc->previous(@_) };
-  DateTime::Set->from_recurrence(%sparms);
+  my %parms;
+  $parms{cron}      = delete $sparms{cron};
+  $parms{user_mode} = delete $sparms{user_mode};
+  $parms{cron} or croak "Cron string parameter required.\n";
+  my $dtc = $class->new(%parms);
+  $dtc->as_set(%sparms);
 }
 
 sub from_crontab {
   # Return list of DateTime::Sets based on entries from
   # a crontab file.
   my $class = shift;
-  my $fh = $class->_prepare_fh(@_);
+  my %sparms = @_;
+  my $file = delete $sparms{file};
+  my %parms;
+  $parms{user_mode} = delete $sparms{user_mode};
+  delete $sparms{cron};
+  my $fh = $class->_prepare_fh($file);
   my @cronsets;
   while (<$fh>) {
     my $set;
-    eval { $set = $class->from_cron($_) };
+    eval { $set = $class->from_cron(%parms, cron => $_) };
     push(@cronsets, $set) if ref $set && !$@;
   }
   @cronsets;
+}
+
+sub as_set {
+  # Return self as DateTime::Set
+  my $self = shift;
+  my %sparms = @_;
+  Carp::cluck "Recurrence callbacks overriden by ". ref $self . "\n"
+    if $sparms{next} || $sparms{recurrence} || $sparms{previous};
+  delete $sparms{next};
+  delete $sparms{previous};
+  delete $sparms{recurrence};
+  $sparms{next}     = sub { $self->next(@_) };
+  $sparms{previous} = sub { $self->previous(@_) };
+  DateTime::Set->from_recurrence(%sparms);
 }
 
 ###
@@ -55,7 +70,8 @@ sub new {
   my $class = shift;
   my $self = {};
   bless $self, $class;
-  my $crontab = $self->_make_cronset(shift);
+  my %parms = @_ == 1 ? (cron => shift) : @_;
+  my $crontab = $self->_make_cronset(%parms);
   $self->_cronset($crontab);
   $self;
 }
@@ -64,11 +80,13 @@ sub new_from_cron { new(@_) }
 
 sub new_from_crontab {
   my $class = shift;
-  my $fh = $class->_prepare_fh(@_);
+  my %parms = @_ == 1 ? (file => shift()) : @_;
+  my $fh = $class->_prepare_fh($parms{file});
+  delete $parms{file};
   my @dtcrons;
   while (<$fh>) {
     my $dtc;
-    eval { $dtc = $class->new($_) };
+    eval { $dtc = $class->new(%parms, cron => $_) };
     push(@dtcrons, $dtc) if ref $dtc && !$@;
   }
   @dtcrons;
@@ -80,10 +98,10 @@ sub _prepare_fh {
   my $class = shift;
   my $fh = shift;
   if (! ref $fh) {
-    eval "use FileHandle";
-    croak "Error loading FileHandle: $@\n" if $@;
-    $fh = FileHandle->new($fh, 'r')
-      or croak "Error opening $fh for reading\n";
+    my $file = $fh;
+    $fh = do { local *FH; *FH }; # doubled *FH avoids warning
+    $fh = open "<$file"
+      or croak "Error opening $file for reading\n";
   }
   $fh;
 }
@@ -344,11 +362,13 @@ sub _make_cronset { shift; DateTime::Event::Cron::IntegratedSet->new(@_) }
 
 sub days_contain { shift->_cronset->days_contain(@_) }
 
-sub minute { shift->_cronset->minute }
-sub hour   { shift->_cronset->hour   }
-sub day    { shift->_cronset->day    }
-sub month  { shift->_cronset->month  }
-sub dow    { shift->_cronset->dow    }
+sub minute  { shift->_cronset->minute  }
+sub hour    { shift->_cronset->hour    }
+sub day     { shift->_cronset->day     }
+sub month   { shift->_cronset->month   }
+sub dow     { shift->_cronset->dow     }
+sub user    { shift->_cronset->user    }
+sub command { shift->_cronset->command }
 
 ### Static acessors/mutators
 
@@ -430,14 +450,28 @@ sub new {
 sub set_cron {
   # Initialize
   my $self = shift;
-  @_ && defined $_[0] or croak "Cron entry fields required\n";
-  my @entry = ref $_[0] ? @{shift()} : split(/\s+/, shift);
-  @entry >= 5 or croak "Five cron entry fields required.\n";
+  my %parms = @_;
+  my $cron = $parms{cron};
+  my $user_mode = $parms{user_mode};
+  defined $cron or croak "Cron entry fields required\n";
+  my @entry;
+  if (ref $cron) {
+    @entry = @$cron;
+  }
+  elsif ($user_mode) {
+    @entry = $cron =~ /^\s*(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s*(.*)/;
+  }
+  else {
+    @entry = $cron =~ /^\s*(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s*(.*)/;
+  }
+  @entry >= 5 or croak "At least five cron entry fields required.\n";
   my $i = 0;
   foreach my $name (qw( minute hour day month dow )) {
     $self->_attr($name, $self->make_valid_set($name, $entry[$i]));
     ++$i;
   }
+  $self->_attr('command', $entry[-1]) if $entry[-1];
+  $self->_attr('user', $entry[-2]) if $user_mode && $entry[-2];
   my @day_list  = $self->day->list;
   my @dow_list  = $self->dow->list;
   my $day_range = $self->range('day');
@@ -505,11 +539,13 @@ sub days_contain {
 }
 
 # Set Accessors
-sub minute { shift->_attr('minute') }
-sub hour   { shift->_attr('hour'  ) }
-sub day    { shift->_attr('day'   ) }
-sub month  { shift->_attr('month' ) }
-sub dow    { shift->_attr('dow'   ) }
+sub minute  { shift->_attr('minute' ) }
+sub hour    { shift->_attr('hour'   ) }
+sub day     { shift->_attr('day'    ) }
+sub month   { shift->_attr('month'  ) }
+sub dow     { shift->_attr('dow'    ) }
+sub user    { shift->_attr('user'   ) }
+sub command { shift->_attr('command') }
 
 # Accessors/mutators
 sub _range       { shift->_attr('range',       @_) }
@@ -663,42 +699,57 @@ L<crontab(5)> and extensions described in L<Set::Crontab>. The
 fields can be passed as a single string or as a reference to an array
 containing each field. Only the first five fields are retained.
 
-=over
-
 =head2 DateTime::Set Factories
 
 See L<DateTime::Set> for methods provided by Set objects, such as
 C<next()> and C<previous()>.
 
+=over 4
+
 =item from_cron($cronline)
 
-=item from_cron($cronline, %set_parms)
+=item from_cron(cron => $cronline, %parms, %set_parms)
 
-Generates a DateTime::Set recurrence for the cron line provided. All
-remaining arguments will be passed to the DateTime::Set constructor.
+Generates a DateTime::Set recurrence for the cron line provided. See
+new() for details on %parms. Optionally takes parameters for
+DateTime::Set.
 
-=item from_crontab($crontab_fh)
-
-=item from_crontab($crontab_fh, %set_parms)
+=item from_crontab(file => $crontab_fh, %parms, %set_parms)
 
 Returns a list of DateTime::Set recurrences based on lines from
 a crontab file. C<$crontab_fh> can be either a filename or filehandle
-reference. Optionally takes parameters for DateTime::Set which will
-be passed along to each set for each line.
+reference. See new() for details on %parm. Optionally takes parameters
+for DateTime::Set which will be passed along to each set for each line.
+
+=item as_set(%set_parms)
+
+Generates a DateTime::Set recurrence from an existing
+DateTime::Event::Cron object.
+
+=back
 
 =head2 Constructors
 
-=item new_from_cron($cronstring)
+=over 4
+
+=item new_from_cron(cron => $cronstring, %parms)
 
 Returns a DateTime::Event::Cron object based on the cron specification.
+Optional parameters include the boolean 'user_mode' which indicates
+that the crontab entry includes a username column before the command.
 
-=item new_from_crontab($fh)
+=item new_from_crontab(file => $fh, %parms)
 
 Returns a list of DateTime::Event::Cron objects based on the lines
 of a crontab file. C<$fh> can be either a filename or a filehandle
-reference.
+reference. Optional parameters include the boolean 'user_mode' as
+mentioned above.
+
+=back
 
 =head2 Other methods
+
+=over 4
 
 =item next()
 
@@ -729,6 +780,12 @@ with seconds greater than 0 are invalid by default. (note: never
 fear, all methods accepting dates will accept invalid dates -- they
 will simply be rounded to the next nearest valid date in all
 cases except this particular method)
+
+=item command()
+
+Returns the command string, if any, from the original crontab entry.
+Currently no expansion is performed such as resolving environment
+variables, etc.
 
 =back
 

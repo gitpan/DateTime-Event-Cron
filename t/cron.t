@@ -1,7 +1,7 @@
 #!/usr/bin/perl -w
 use strict;
 use lib './lib';
-use Test::More tests => 88;
+use Test::More tests => 94;
 
 use DateTime;
 use DateTime::Event::Cron;
@@ -14,17 +14,28 @@ sub make_datetime {
 
 sub dcomp { is(shift->datetime, shift->datetime, shift) }
 
-my($odate, $date, $new, $dts, $desc);
+my($odate, $date, $new, $dts, $dtc, $dtd, $desc);
 
 # check string handling
-$dts = DateTime::Event::Cron->from_cron('* * * * * /bin/date');
-ok($dts, 'fully formed cron string');
-$dts = DateTime::Event::Cron->from_cron('* * * * *');
-ok($dts, 'time-only cron string');
+
+$dtc = DateTime::Event::Cron->new(cron => '* * * * * /bin/date');
+ok(ref $dtc, 'fully formed cron string');
+ok($dtc->command eq '/bin/date', 'command recall');
+$dts = $dtc->as_set;
+ok(ref $dts, 'as_set');
+$dtc = DateTime::Event::Cron->new(cron => '* * * * * gump /bin/date', user_mode => 1);
+ok(ref $dtc, 'user mode');
+ok($dtc->command eq '/bin/date', 'user command recall');
+ok($dtc->user eq 'gump', 'user recall');
+$dts = DateTime::Event::Cron->from_cron(cron => '* * * * * /bin/date');
+ok($dts, 'from_cron fully formed cron');
+$dts = DateTime::Event::Cron->from_cron(cron => '* * * * *');
+ok($dts, 'from_cron time-only cron string');
+$dts = DateTime::Event::Cron->from_cron(cron => '* * * * * /bin/date');
 
 # Next and previous, delta 60 secs or so. Explicit now()
 $desc = "delta span, explicit now";
-my $dtd = DateTime::Duration->new(seconds => 62);
+$dtd = DateTime::Duration->new(seconds => 62);
 ok($dts, "$desc create");
 $date  = DateTime->now;
 $new = $dts->next($date);
@@ -35,7 +46,7 @@ cmp_ok( ($date - $new)->seconds, '<', $dtd->seconds, "$desc prev");
 # Next and previous, delta 60 secs or so. Implicit now() (not
 # possible using set methods so we go native)
 $desc = "delta span, implicit now";
-my $dtc = DateTime::Event::Cron->new_from_cron('* * * * *');
+$dtc = DateTime::Event::Cron->new_from_cron(cron => '* * * * *');
 ok($dtc, "$desc create");
 $date  = DateTime->now;
 $new = $dtc->next();
@@ -46,7 +57,7 @@ cmp_ok( ($date - $new)->seconds, '<', $dtd->seconds, "$desc prev");
 
 # cron on sunday once a week, 0-based dow
 $desc = 'every sunday, 0-based';
-$dts = DateTime::Event::Cron->from_cron('12 21 * * 0');
+$dts = DateTime::Event::Cron->from_cron(cron => '12 21 * * 0');
 ok($dts, "$desc create");
 $odate = make_datetime(2002,9,9,15,10,0);
 $date = $odate->clone;
@@ -73,7 +84,7 @@ dcomp($new, $date, "$desc prev");
 
 # cron on sunday, once a week 7-based dow
 $desc = 'every sunday, 7-based';
-$dts = DateTime::Event::Cron->from_cron('12 21 * * 7');
+$dts = DateTime::Event::Cron->from_cron(cron => '12 21 * * 7');
 ok($dts, "$desc create");
 $odate = make_datetime(2002,9,9,15,10,0);
 $date = $odate->clone;
@@ -87,7 +98,7 @@ dcomp($new, $date, "$desc prev");
 
 # cron twice a week on tuesdays and thursdays
 $desc = 'every tues/thurs';
-$dts = DateTime::Event::Cron->from_cron('12 21 * * 2,4');
+$dts = DateTime::Event::Cron->from_cron(cron => '12 21 * * 2,4');
 ok($dts, "$desc create");
 $odate = make_datetime(2002,9,9,15,10,0);
 $date = $odate->clone;
@@ -114,7 +125,7 @@ dcomp($new, $date, "$desc prev");
 
 # job runs once a week on fridays and every 5 days
 $desc = 'every fri & 5 days';
-$dts = DateTime::Event::Cron->from_cron('30 10 */5 * 5');
+$dts = DateTime::Event::Cron->from_cron(cron => '30 10 */5 * 5');
 ok($dts, "$desc create");
 $odate = make_datetime(2002,9,9,5,10,0);
 $date = $odate->clone;
@@ -156,7 +167,7 @@ dcomp($new, $date, "$desc prev");
 
 # cron every hour
 $desc = 'every hour';
-$dts = DateTime::Event::Cron->from_cron('42 * * * *');
+$dts = DateTime::Event::Cron->from_cron(cron => '42 * * * *');
 ok($dts, "$desc create");
 $odate = make_datetime(1987,6,21,9,51,0);
 $date = $odate->clone;
@@ -183,7 +194,7 @@ dcomp($new, $date, "$desc prev");
 
 # cron on assorted hours
 $desc = "assorted hours";
-$dts = DateTime::Event::Cron->from_cron('42 13,15,22,23 * * *');
+$dts = DateTime::Event::Cron->from_cron(cron => '42 13,15,22,23 * * *');
 ok($dts, "$desc create");
 $odate = make_datetime(1987,6,21,17,51,0);
 $date = $odate->clone;
@@ -213,7 +224,7 @@ dcomp($new, $date, "$desc prev");
 
 # cron every minute of 5pm
 $desc = "every minute of 5pm";
-$dts = DateTime::Event::Cron->from_cron('* 17 * * *');
+$dts = DateTime::Event::Cron->from_cron(cron => '* 17 * * *');
 ok($dts, "$desc create");
 $odate = make_datetime(1987,6,21,17,57,59);
 $date = $odate->clone;
@@ -234,7 +245,7 @@ dcomp($new, $date, "$desc prev");
 
 # cron on assorted minutes
 $desc = "assorted minutes";
-$dts = DateTime::Event::Cron->from_cron('2,32 * * * *');
+$dts = DateTime::Event::Cron->from_cron(cron => '2,32 * * * *');
 ok($dts, "$desc create");
 $odate = make_datetime(1987,6,21,17,57,59);
 $date = $odate->clone;
@@ -263,7 +274,7 @@ dcomp($new, $date, "$desc prev");
 # on sundays and tuesdays, or on the 11th, in March and November.
 # every 37 minutes past 7pm
 $desc = '*/37 19 11 3,11 0,2';
-$dts = DateTime::Event::Cron->from_cron($desc);
+$dts = DateTime::Event::Cron->from_cron(cron => $desc);
 ok($dts, "$desc create");
 $odate = make_datetime(1985,10,26,1,20,0);
 $date = $odate->clone;
@@ -326,7 +337,7 @@ dcomp($new, $date, "$desc prev");
 
 # a very infrequent cron job
 $desc = "infrequent";
-$dts = DateTime::Event::Cron->from_cron('0 13 29 2 *');
+$dts = DateTime::Event::Cron->from_cron(cron => '0 13 29 2 *');
 ok($dts, "$desc create");
 $odate = make_datetime(1995,4,12,5,30,0);
 $date = $odate->clone;

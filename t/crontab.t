@@ -17,7 +17,7 @@ sub dcomp { is(shift->datetime, shift->datetime, shift) }
 my($odate, $date, $new, $dts);
 my(@dts, @set);
 
-@dts = DateTime::Event::Cron->from_crontab(\*DATA);
+@dts = DateTime::Event::Cron->from_crontab(file => \*DATA);
 is(scalar @dts, 4, 'load crontab');
 
 $odate = make_datetime(2004,8,8,8,8,8);
