@@ -7,7 +7,7 @@ use Carp;
 
 use vars qw($VERSION);
 
-$VERSION = '0.06';
+$VERSION = '0.07';
 
 use constant DEBUG => 0;
 
@@ -22,7 +22,7 @@ my %Object_Attributes;
 sub from_cron {
   # Return cron as DateTime::Set
   my $class = shift;
-  my %sparms = @_;
+  my %sparms = @_ == 1 ? (cron => shift) : @_;
   my %parms;
   $parms{cron}      = delete $sparms{cron};
   $parms{user_mode} = delete $sparms{user_mode};
@@ -35,16 +35,15 @@ sub from_crontab {
   # Return list of DateTime::Sets based on entries from
   # a crontab file.
   my $class = shift;
-  my %sparms = @_;
+  my %sparms = @_ == 1 ? (file => shift) : @_;
   my $file = delete $sparms{file};
-  my %parms;
-  $parms{user_mode} = delete $sparms{user_mode};
   delete $sparms{cron};
   my $fh = $class->_prepare_fh($file);
   my @cronsets;
   while (<$fh>) {
+    chomp;
     my $set;
-    eval { $set = $class->from_cron(%parms, cron => $_) };
+    eval { $set = $class->from_cron(%sparms, cron => $_) };
     push(@cronsets, $set) if ref $set && !$@;
   }
   @cronsets;
@@ -102,8 +101,10 @@ sub _prepare_fh {
   my $fh = shift;
   if (! ref $fh) {
     my $file = $fh;
+    print "opening $file\n";
+    local(*FH);
     $fh = do { local *FH; *FH }; # doubled *FH avoids warning
-    $fh = open "<$file"
+    open($fh, "<$file")
       or croak "Error opening $file for reading\n";
   }
   $fh;
@@ -126,12 +127,14 @@ sub valid {
 sub next {
   my($self, $date) = @_;
   $date = DateTime->now unless $date;
+  return $date if $date->is_infinite;
   $self->increment($date->clone);
 }
 
 sub previous {
   my($self, $date) = @_;
   $date = DateTime->now unless $date;
+  return $date if $date->is_infinite;
   $self->decrement($date->clone);
 }
 
@@ -590,6 +593,8 @@ use strict;
 use Carp;
 use base 'Set::Crontab';
 
+my %Object_Attributes;
+
 sub new {
   my $class = shift;
   my($string, $range) = @_;
@@ -653,23 +658,33 @@ sets from crontab lines and files.
   use DateTime::Event::Cron;
 
   # DateTime::Set construction from crontab line
-  $crontab = '*/3 30 1-10 3,4,5 */2';
+  $crontab = '*/3 15 1-10 3,4,5 */2';
   $set = DateTime::Event::Cron->from_cron($crontab);
   $iter = $set->iterator(after => DateTime->now);
-  sleep(($iter - DateTime->now)->seconds);
   while (1) {
+    my $next = $iter->next;
+    my $now  = DateTime->now;
+    sleep(($next->subtract_datetime_absolute($now))->seconds);
     # do stuff...
-    sleep(($iter->next - DateTime->now)->seconds);
   }
 
   # List of DateTime::Set objects from crontab file
-  @sets = DateTime::Event::Cron->from_crontab('/etc/crontab');
+  @sets = DateTime::Event::Cron->from_crontab(file => '/etc/crontab');
+  $now = DateTime->now;
+  print "Now: ", $now->datetime, "\n";
+  foreach (@sets) {
+    my $next = $_->next($now);
+    print $next->datetime, "\n";
+  }
 
   # DateTime::Set parameters
   $crontab = '* * * * *';
-  %set_parms = ( after => DateTime->now );
-  $set = DateTime::Event::Cron->from_cron($crontab, %set_parms);
+
+  $now = DateTime->now;
+  %set_parms = ( after => $now );
+  $set = DateTime::Event::Cron->from_cron(cron => $crontab, %set_parms);
   $dt = $set->next;
+  print "Now: ", $now->datetime, " and next: ", $dt->datetime, "\n";
 
   # Spans for DateTime::Set
   $crontab = '* * * * *';
@@ -679,13 +694,14 @@ sets from crontab lines and files.
             start => $now->add(minutes => 1),
 	    end   => $now2->add(hours => 1),
 	  );
-  $set = DateTime::Event::Cron->from_cron($crontab, span => $span);
+  %parms = (cron => $crontab, span => $span);
+  $set = DateTime::Event::Cron->from_cron(%parms);
   # ...do things with the DateTime::Set
 
   # Every RTFCT relative to 12am Jan 1st this year
   $crontab = '7-10 6,12-15 10-28/2 */3 3,4,5';
   $date = DateTime->now->truncate(to => 'year');
-  $set = DateTime::Event::Cron->from_cron($crontab, after => $date);
+  $set = DateTime::Event::Cron->from_cron(cron => $crontab, after => $date);
 
   # Rather than generating DateTime::Set objects, next/prev
   # calculations can be made directly:
@@ -693,22 +709,22 @@ sets from crontab lines and files.
   # Every day at 10am, 2pm, and 6pm. Reference date
   # defaults to DateTime->now.
   $crontab = '10,14,18 * * * *';
-  $dtc = DateTime::Event::Cron->new_from_cron($crontab);
+  $dtc = DateTime::Event::Cron->new_from_cron(cron => $crontab);
   $next_datetime = $dtc->next;
   $last_datetime = $dtc->previous;
   ...
 
   # List of DateTime::Event::Cron objects from
   # crontab file
-  @dtc = DateTime::Event::Cron->new_from_crontab('/etc/crontab');
+  @dtc = DateTime::Event::Cron->new_from_crontab(file => '/etc/crontab');
 
   # Full cron lines with user, such as from /etc/crontab
-  # or files in /etc/cron.d, are supported:
+  # or files in /etc/cron.d, are supported and auto-detected:
   $crontab = '* * * * * gump /bin/date';
-  $dtc = DateTime::Event::Cron->new($crontab);
+  $dtc = DateTime::Event::Cron->new(cron => $crontab);
 
   # Auto-detection of users is disabled if you explicitly
-  # enable/disable via named parameters:
+  # enable/disable via the user_mode parameter:
   $dtc = DateTime::Event::Cron->new(cron => $crontab, user_mode => 1);
   my $user = $dtc->user;
   my $command = $dtc->command;
@@ -718,13 +734,13 @@ sets from crontab lines and files.
 
 =head1 DESCRIPTION
 
-DateTime::Event::Cron generated DateTime events or DateTime::Set
-objects based on crontab-style entries.
+DateTime::Event::Cron generated DateTime events or DateTime::Set objects
+based on crontab-style entries.
 
 =head1 METHODS
 
-The cron fields are typical crontab-style entries. For more information, see
-L<crontab(5)> and extensions described in L<Set::Crontab>. The
+The cron fields are typical crontab-style entries. For more information,
+see L<crontab(5)> and extensions described in L<Set::Crontab>. The
 fields can be passed as a single string or as a reference to an array
 containing each field. Only the first five fields are retained.
 
@@ -745,8 +761,8 @@ DateTime::Set.
 
 =item from_crontab(file => $crontab_fh, %parms, %set_parms)
 
-Returns a list of DateTime::Set recurrences based on lines from
-a crontab file. C<$crontab_fh> can be either a filename or filehandle
+Returns a list of DateTime::Set recurrences based on lines from a
+crontab file. C<$crontab_fh> can be either a filename or filehandle
 reference. See new() for details on %parm. Optionally takes parameters
 for DateTime::Set which will be passed along to each set for each line.
 
@@ -764,15 +780,14 @@ DateTime::Event::Cron object.
 =item new_from_cron(cron => $cronstring, %parms)
 
 Returns a DateTime::Event::Cron object based on the cron specification.
-Optional parameters include the boolean 'user_mode' which indicates
-that the crontab entry includes a username column before the command.
+Optional parameters include the boolean 'user_mode' which indicates that
+the crontab entry includes a username column before the command.
 
 =item new_from_crontab(file => $fh, %parms)
 
-Returns a list of DateTime::Event::Cron objects based on the lines
-of a crontab file. C<$fh> can be either a filename or a filehandle
-reference. Optional parameters include the boolean 'user_mode' as
-mentioned above.
+Returns a list of DateTime::Event::Cron objects based on the lines of a
+crontab file. C<$fh> can be either a filename or a filehandle reference.
+Optional parameters include the boolean 'user_mode' as mentioned above.
 
 =back
 
@@ -798,17 +813,17 @@ C<$date> defaults to DateTime->now unless provided.
 
 =item decrement($date)
 
-Same as C<next()> and C<previous()> except that the provided
-datetime is modified to the new datetime.
+Same as C<next()> and C<previous()> except that the provided datetime is
+modified to the new datetime.
 
 =item valid($date)
 
 Returns whether the given datetime is valid under the current cron
 specification. Cron dates are only accurate to the minute -- datetimes
-with seconds greater than 0 are invalid by default. (note: never
-fear, all methods accepting dates will accept invalid dates -- they
-will simply be rounded to the next nearest valid date in all
-cases except this particular method)
+with seconds greater than 0 are invalid by default. (note: never fear,
+all methods accepting dates will accept invalid dates -- they will
+simply be rounded to the next nearest valid date in all cases except
+this particular method)
 
 =item command()
 
@@ -818,14 +833,13 @@ variables, etc.
 
 =item user()
 
-Returns the username under which this cron command was to be
-executed, assuming such a field was present in the original
-cron entry.
+Returns the username under which this cron command was to be executed,
+assuming such a field was present in the original cron entry.
 
 =item original()
 
-Returns the original, unparsed cron string including any user
-or command fields.
+Returns the original, unparsed cron string including any user or
+command fields.
 
 =back
 
@@ -842,7 +856,6 @@ modify it under the same terms as Perl itself.
 =head1 SEE ALSO
 
 DateTime(3), DateTime::Set(3), DateTime::Event::Recurrence(3),
-DateTime::Event::ICal(3), DateTime::Span(3), Set::Crontab(3),
-crontab(5)
+DateTime::Event::ICal(3), DateTime::Span(3), Set::Crontab(3), crontab(5)
 
 =cut

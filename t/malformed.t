@@ -1,24 +1,12 @@
 #!/usr/bin/perl -w
 use strict;
 use lib './lib';
-use Test::More tests => 20;
+use Test::More tests => 16;
 
 use DateTime;
 use DateTime::Event::Cron;
 
 my($dtc);
-
-# handle overfull lines gracefully (possibly from an actual crontab)
-$dtc = DateTime::Event::Cron->new('* * * * * /bin/buzzard');
-ok($dtc, 'full cronline');
-$dtc = DateTime::Event::Cron->new([qw(* * * * * /bin/buzzard)]);
-ok($dtc, 'full cron entry as array ref');
-$dtc = DateTime::Event::Cron->new(
-                                  '* * * * * /bin/buzzard # commentary');
-ok($dtc, 'full cronline with comment');
-$dtc = DateTime::Event::Cron->new(['*', '*', '*', '*', '*',
-                                  '/bin/buzzard', '# commentary']);
-ok($dtc, 'full cron entry as array ref w/comment');
 
 # fail on sparse lines
 eval {

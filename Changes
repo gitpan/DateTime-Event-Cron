@@ -1,5 +1,8 @@
 Revision history:
 
+0.07  Mon Mar 29 16:54:25 CST 2004
+  - Patched next() and previous() to work with new DateTime::Set
+
 0.06  Tue Dec 30 14:28:32 CST 2003
 	- Added user-mode auto-detection
 	- Added original() method to return original

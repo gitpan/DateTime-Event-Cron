@@ -1,7 +1,7 @@
 #!/usr/bin/perl -w
 use strict;
 use lib './lib';
-use Test::More tests => 101;
+use Test::More tests => 86;
 
 use DateTime;
 use DateTime::Event::Cron;
@@ -16,34 +16,8 @@ sub dcomp { is(shift->datetime, shift->datetime, shift) }
 
 my($odate, $date, $new, $dts, $dtc, $dtd, $desc);
 
-# check string handling
-
-my $c_str = '* * * * * /bin/date';
-$dtc = DateTime::Event::Cron->new(cron => $c_str);
-ok(ref $dtc, 'fully formed cron string');
-ok($dtc->command eq '/bin/date', 'command recall');
-ok(! defined $dtc->user, 'user undefined');
-ok($dtc->original eq $c_str, 'original recall');
-$dts = $dtc->as_set;
-ok(ref $dts, 'as_set');
-my $um_str = "* * * * * gump /bin/date";
-$dtc = DateTime::Event::Cron->new(cron => $um_str, user_mode => 1);
-ok(ref $dtc, 'user mode');
-ok($dtc->user eq 'gump', 'user recall');
-ok($dtc->command eq '/bin/date', 'user command recall');
-ok($dtc->original eq $um_str, 'user original recall');
-$dtc = DateTime::Event::Cron->new(cron => $um_str);
-ok(ref $dtc, 'auto user mode');
-ok($dtc->user eq 'gump', 'auto user mode recall');
-ok($dtc->command eq '/bin/date', 'auto user command recall');
-ok($dtc->original eq $um_str, 'auto user original recall');
-$dts = DateTime::Event::Cron->from_cron(cron => '* * * * * /bin/date');
-ok($dts, 'from_cron fully formed cron');
-$dts = DateTime::Event::Cron->from_cron(cron => '* * * * *');
-ok($dts, 'from_cron time-only cron string');
-$dts = DateTime::Event::Cron->from_cron(cron => '* * * * * /bin/date');
-
 # Next and previous, delta 60 secs or so. Explicit now()
+$dts = DateTime::Event::Cron->from_cron(cron => '* * * * *');
 $desc = "delta span, explicit now";
 $dtd = DateTime::Duration->new(seconds => 62);
 ok($dts, "$desc create");
