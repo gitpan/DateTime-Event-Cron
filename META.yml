@@ -1,0 +1,16 @@
+--- #YAML:1.0
+name:                DateTime-Event-Cron
+version:             0.08
+abstract:            DateTime extension for generating recurrence
+license:             ~
+author:              
+    - Matthew P. Sisk  <sisk@mojotoad.com>
+generated_by:        ExtUtils::MakeMaker version 6.42
+distribution_type:   module
+requires:     
+    DateTime:                      0.21
+    DateTime::Set:                 0.1406
+    Set::Crontab:                  0
+meta-spec:
+    url:     http://module-build.sourceforge.net/META-spec-v1.3.html
+    version: 1.3

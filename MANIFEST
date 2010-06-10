@@ -9,3 +9,4 @@ t/cron.t
 t/crontab.t
 t/leapyear.t
 t/malformed.t
+META.yml                                 Module meta-data (added by MakeMaker)

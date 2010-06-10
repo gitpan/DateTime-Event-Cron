@@ -7,7 +7,7 @@ use Carp;
 
 use vars qw($VERSION);
 
-$VERSION = '0.07';
+$VERSION = '0.08';
 
 use constant DEBUG => 0;
 
@@ -101,7 +101,6 @@ sub _prepare_fh {
   my $fh = shift;
   if (! ref $fh) {
     my $file = $fh;
-    print "opening $file\n";
     local(*FH);
     $fh = do { local *FH; *FH }; # doubled *FH avoids warning
     open($fh, "<$file")
@@ -115,7 +114,17 @@ sub _prepare_fh {
 sub valid {
   # Is the given date valid according the current cron settings?
   my($self, $date) = @_;
-  return undef if $date->second;
+  return if !$date || $date->second;
+  $self->minute->contains($date->minute)      &&
+  $self->hour->contains($date->hour)          &&
+  $self->days_contain($date->day, $date->dow) &&
+  $self->month->contains($date->month);
+}
+
+sub match {
+  # Does the given date match the cron spec?
+  my($self, $date) = @_;
+  $date = DateTime->now unless $date;
   $self->minute->contains($date->minute)      &&
   $self->hour->contains($date->hour)          &&
   $self->days_contain($date->day, $date->dow) &&
@@ -127,14 +136,12 @@ sub valid {
 sub next {
   my($self, $date) = @_;
   $date = DateTime->now unless $date;
-  return $date if $date->is_infinite;
   $self->increment($date->clone);
 }
 
 sub previous {
   my($self, $date) = @_;
   $date = DateTime->now unless $date;
-  return $date if $date->is_infinite;
   $self->decrement($date->clone);
 }
 
@@ -143,6 +150,7 @@ sub previous {
 sub increment {
   my($self, $date) = @_;
   $date = DateTime->now unless $date;
+  return $date if $date->is_infinite;
   do {
     $self->_attempt_increment($date);
   } until $self->valid($date);
@@ -152,6 +160,7 @@ sub increment {
 sub decrement {
   my($self, $date) = @_;
   $date = DateTime->now unless $date;
+  return $date if $date->is_infinite;
   do {
     $self->_attempt_decrement($date);
   } until $self->valid($date);
@@ -657,6 +666,15 @@ sets from crontab lines and files.
 
   use DateTime::Event::Cron;
 
+  # check if a date matches (defaults to current time)
+  my $c = DateTime::Event::Cron->new('* 2 * * *');
+  if ($c->match) {
+    # do stuff
+  }
+  if ($c->match($date)) {
+    # do something else for datetime $date
+  }
+
   # DateTime::Set construction from crontab line
   $crontab = '*/3 15 1-10 3,4,5 */2';
   $set = DateTime::Event::Cron->from_cron($crontab);
@@ -816,14 +834,20 @@ C<$date> defaults to DateTime->now unless provided.
 Same as C<next()> and C<previous()> except that the provided datetime is
 modified to the new datetime.
 
+=item match($date)
+
+Returns whether or not the given datetime (defaults to current time)
+matches the current cron specification. Dates are truncated to minute
+resolution.
+
 =item valid($date)
 
-Returns whether the given datetime is valid under the current cron
-specification. Cron dates are only accurate to the minute -- datetimes
-with seconds greater than 0 are invalid by default. (note: never fear,
-all methods accepting dates will accept invalid dates -- they will
-simply be rounded to the next nearest valid date in all cases except
-this particular method)
+A more strict version of match(). Returns whether the given datetime is
+valid under the current cron specification. Cron dates are only accurate
+to the minute -- datetimes with seconds greater than 0 are invalid by
+default. (note: never fear, all methods accepting dates will accept
+invalid dates -- they will simply be rounded to the next nearest valid
+date in all cases except this particular method)
 
 =item command()
 

@@ -8,8 +8,10 @@ use DateTime::Event::Cron;
 
 sub make_datetime {
   @_ == 6 or die "Invalid argument count\n";
-  DateTime->new( year => $_[0], month  => $_[1], day    => $_[2],
-                 hour => $_[3], minute => $_[4], second => $_[5] );
+  DateTime->new(
+    year => $_[0], month  => $_[1], day    => $_[2],
+    hour => $_[3], minute => $_[4], second => $_[5],
+  );
 }
 
 sub dcomp { is(shift->datetime, shift->datetime, shift) }
